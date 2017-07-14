@@ -1,0 +1,116 @@
+
+/* This example shows how to use continuous mode to take
+range measurements with the VL53L0X. It is based on
+vl53l0x_ContinuousRanging_Example.c from the VL53L0X API.
+
+The range readings are in units of mm. */
+#include "VL53L0X.h"
+
+#define serial_debug
+
+#ifdef serial_debug
+// SerialLogHandler logHandler(115200, LOG_LEVEL_INFO);
+SerialLogHandler logHandler(115200, LOG_LEVEL_WARN, {
+	{ "app", LOG_LEVEL_INFO },
+	{ "app.custom", LOG_LEVEL_INFO }
+});
+#endif
+
+VL53L0X sensor;
+
+uint32_t sensor_status = 0;
+uint32_t distance_mm = 0xFFFF;
+
+
+void setup()
+{
+  Serial.begin(115200);
+  Wire.begin();
+  Particle.variable("Status", sensor_status);
+  Particle.variable("Range(mm)", distance_mm);
+
+  if (sensor.init()) {
+    sensor_status = 1;
+    #ifdef serial_debug
+    Log.info("VL53L0X initialized. id: %02X", sensor.readReg(0xC0));
+    #endif
+  }
+  else {
+    sensor_status = 0;
+    #ifdef serial_debug
+    Log.info("VL53L0X not found at: %02X", sensor.getAddress());
+    #endif
+  }
+
+  sensor.setTimeout(500); // after this time (ms), stop checking for sensor presence
+
+  // long range settings: (more sensitive to noise like background lights)
+  // lower the return signal rate limit (default is 0.25 MCPS)
+  sensor.setSignalRateLimit(0.1);
+  // increase laser pulse periods (defaults are 14 and 10 PCLKs)
+  sensor.setVcselPulsePeriod(VL53L0X::VcselPeriodPreRange, 18);
+  sensor.setVcselPulsePeriod(VL53L0X::VcselPeriodFinalRange, 14);
+
+  // higher speed: reduce timing budget to 20 ms (default is about 33 ms)
+  // or high accuracy: increase timing budget to 200 ms
+  sensor.setMeasurementTimingBudget(200000);
+
+  // Start continuous back-to-back mode (take readings as fast as possible).
+  // To use continuous timed mode instead, provide a desired inter-measurement
+  // period in ms (e.g. sensor.startContinuous(100)).
+  sensor.startContinuous(500);
+}
+
+uint8_t rangeData[14];
+
+void loop()
+{
+
+  // Verbose mode
+  sensor.readMulti(0x14, &rangeData[0], 14); //RESULT_RANGE_STATUS
+  byte devError = (rangeData[0] & 0x78) >> 3; // Check for errors
+  sensor_status = (devError == 0x0B)? 1 : devError;
+
+  #ifdef serial_debug
+
+  if(devError == 0)     Log.info("Data OK!");// No device error
+  if(devError == 0x01)  Log.info("VCSEL CONTINUITY TEST FAILURE!");
+  if(devError == 0x02)  Log.info("VCSEL WATCHDOG TEST FAILURE!");
+  if(devError == 0x03)  Log.info("NO VHV VALUE FOUND!");
+  if(devError == 0x04)  Log.info("MSRC NO TARGET!");
+  if(devError == 0x05)  Log.info("SNR CHECK!");
+  if(devError == 0x06)  Log.info("RANGE PHASE CHECK!");
+  if(devError == 0x07)  Log.info("SIGMA THRESHOLD CHECK!");
+  if(devError == 0x08)  Log.info("TCC!");
+  if(devError == 0x09)  Log.info("PHASE CONSISTENCY!");
+  if(devError == 0x0A)  Log.info("MIN CLIP!");
+  if(devError == 0x0B)  Log.info("RANGE COMPLETE!");
+  if(devError == 0x0C)  Log.info("ALGO UNDERFLOW!");
+  if(devError == 0x0D)  Log.info("ALGO OVERFLOW!");
+  if(devError == 0x0E)  Log.info("RANGE IGNORE THRESHOLD!");
+
+  Log.info("Effective SPAD Return Count = %.2f", ((float) (rangeData[2]) + (float)rangeData[3]/255.) );
+  Log.info("Signal Rate = %d mega counts per second", (uint16_t) ((uint16_t) rangeData[6] << 8) | rangeData[7] );
+  Log.info("Ambient Rate = %d mega counts per second", (uint16_t) ((uint16_t) rangeData[8] << 8) | rangeData[9] );
+  Log.info("Distance = %d mm", (uint16_t) ((uint16_t) rangeData[10] << 8) | rangeData[11] );
+  #endif
+
+  distance_mm = sensor.readRangeContinuousMillimeters();
+
+  if (sensor.timeoutOccurred()) {
+    #ifdef serial_debug
+    Log.info(" TIMEOUT");
+    #endif
+  }
+
+  if (distance_mm >= 8190) {
+    #ifdef serial_debug
+    Log.info("Out of range");
+    #endif
+  }
+  else {
+    #ifdef serial_debug
+    Log.info("d = %d  mm\n", distance_mm);
+    #endif
+  }
+}
