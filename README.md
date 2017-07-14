@@ -13,3 +13,5 @@ SparkFun Proto board for Photon
 
 ## How it looks on EV3:
 
+![front view](https://raw.githubusercontent.com/jononi/EV3-range-meter-Photon/master/hardware/EV3_universal_sensor_front.JPG)
+![back view](https://raw.githubusercontent.com/jononi/EV3-range-meter-Photon/master/hardware/EV3_universal_sensor_back.JPG)
